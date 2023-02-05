@@ -1,16 +1,21 @@
+pub mod validations;
+
 #[cfg(feature = "ssr")]
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_files::Files;
     use actix_web::*;
-    use conduit_leptos::app::*;
+    use conduit_leptos::app::{self, *};
     use leptos::*;
     use leptos_actix::{generate_route_list, LeptosRoutes};
 
     let conf = get_configuration(None).await.unwrap();
-    let addr = conf.leptos_options.site_address;
+    let addr = conf.leptos_options.site_addr;
     // Generate the list of routes in your Leptos App
     let routes = generate_route_list(|cx| view! { cx, <App/> });
+
+    // Register server functions
+    app::register_server_functions();
 
     HttpServer::new(move || {
         let leptos_options = &conf.leptos_options;
