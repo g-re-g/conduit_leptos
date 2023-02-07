@@ -12,6 +12,8 @@ pub fn register_server_functions() {
 use actix_web::http::{
     header::HeaderMap, header::HeaderName, header::HeaderValue, header::SET_COOKIE, StatusCode,
 };
+#[cfg(feature = "ssr")]
+use actix_web::FromRequest;
 
 #[component]
 pub fn App(cx: Scope) -> impl IntoView {
@@ -358,6 +360,10 @@ pub async fn attempt_login(
     email: String,
     password: String,
 ) -> Result<LoginForm, ServerFnError> {
+    let req = use_context::<actix_web::HttpRequest>(cx).unwrap();
+    let sess = actix_session::Session::extract(&req).await.unwrap();
+    println!("{:?}", sess.get::<i32>("user_email"));
+
     let form = LoginForm {
         email: Field::required(Some(email)).trim().min_length(10).email(),
         password: Field::required(Some(password)).trim().min_length(10),

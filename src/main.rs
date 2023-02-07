@@ -4,6 +4,7 @@ pub mod validations;
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_files::Files;
+    use actix_session::{storage::CookieSessionStore, Session, SessionMiddleware};
     use actix_web::*;
     use conduit_leptos::app::{self, *};
     use leptos::*;
@@ -22,6 +23,15 @@ async fn main() -> std::io::Result<()> {
         let site_root = &leptos_options.site_root;
 
         App::new()
+            .wrap(
+                // create cookie based session middleware
+                SessionMiddleware::builder(
+                    CookieSessionStore::default(),
+                    cookie::Key::from(&[0; 64]),
+                )
+                .cookie_secure(false)
+                .build(),
+            )
             .route("/api/{tail:.*}", leptos_actix::handle_server_fns())
             .leptos_routes(
                 leptos_options.to_owned(),
