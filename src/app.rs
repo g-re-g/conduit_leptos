@@ -75,7 +75,16 @@ fn LoginForm(cx: Scope) -> impl IntoView {
     let pending_submissions = move || submissions.get().iter().find(|s| s.pending()()).is_some();
     let latest_result = move || {
         let subs = submissions.get();
-        subs.iter().last().map(|s| s.value.get()).unwrap_or(None)
+        let res = subs.iter().last().map(|s| s.value.get()).unwrap_or(None);
+
+        if let Some(Ok(res)) = &res {
+            if res.is_valid() {
+                let nav = use_navigate(cx);
+                let _ = nav("/", Default::default());
+            }
+        }
+
+        res
     };
 
     view! {cx,
@@ -278,7 +287,7 @@ fn Header(cx: Scope) -> impl IntoView {
               <a class="nav-link" href=""> <i class="ion-gear-a"></i>" Settings "</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="">"Sign in"</a>
+              <A class="nav-link" href="/login">"Sign in"</A>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="">"Sign up"</a>
@@ -332,9 +341,15 @@ fn TagList(cx: Scope, tags: Vec<&'static str>) -> impl IntoView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct LoginAttempt {
+pub struct LoginForm {
     pub email: Field<String>,
     pub password: Field<String>,
+}
+
+impl LoginForm {
+    pub fn is_valid(&self) -> bool {
+        self.email.errors.is_empty() && self.password.errors.is_empty()
+    }
 }
 
 #[server(AttemptLogin, "/api")]
@@ -342,13 +357,12 @@ pub async fn attempt_login(
     cx: Scope,
     email: String,
     password: String,
-) -> Result<LoginAttempt, ServerFnError> {
-    // fake API delay
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    Ok(LoginAttempt {
-        email: Field::required(None),
-        password: Field::required(None),
-    })
+) -> Result<LoginForm, ServerFnError> {
+    let form = LoginForm {
+        email: Field::required(Some(email)).trim().min_length(10).email(),
+        password: Field::required(Some(password)).trim().min_length(10),
+    };
+    Ok(form)
 }
 
 #[cfg(feature = "ssr")]
