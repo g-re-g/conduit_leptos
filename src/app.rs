@@ -6,6 +6,8 @@ use leptos_router::*;
 #[cfg(feature = "ssr")]
 pub fn register_server_functions() {
     let _ = AttemptLogin::register();
+    let _ = GetCurrentUser::register();
+    let _ = Logout::register();
 }
 
 #[cfg(feature = "ssr")]
@@ -51,7 +53,8 @@ pub fn App(cx: Scope) -> impl IntoView {
                 <Routes>
                     <Route path="" view=|cx| view! { cx, <HomePage/> }/>
                     <Route path="login" view=|cx| view! { cx, <LoginPage/> }/>
-
+                    <Route path="logged-out" view=|cx| view! { cx, <LogoutPage/> }/>
+                    <Route path="settings" view=|cx| view! { cx, <SettingsPage/> }/>
                 </Routes>
             </main>
         </Router>
@@ -146,6 +149,77 @@ fn LoginPage(cx: Scope) -> impl IntoView {
             </div>
           </div>
         </div>
+    }
+}
+
+#[component]
+fn LogoutPage(cx: Scope) -> impl IntoView {
+    view! {cx,
+        <div class="auth-page">
+          <Header />
+          <div class="container page">
+            <div class="row">
+              <div class="col-md-6 offset-md-3 col-xs-12">
+                <h1 class="text-xs-center">"You have been logged out."</h1>
+              </div>
+            </div>
+          </div>
+        </div>
+    }
+}
+
+#[component]
+fn SettingsPage(cx: Scope) -> impl IntoView {
+    let logout_action = create_server_action::<Logout>(cx);
+    // TODO: how do we make this just a POST and not a server action?
+    create_effect(cx, move |_| {
+        console_log("logout action run");
+        if let Some(Ok(_)) = &logout_action.value().get() {
+            let nav = use_navigate(cx);
+            let _ = nav("/logged-out", Default::default());
+        }
+        ()
+    });
+    view! {cx,
+    <Header />
+    <div class="settings-page">
+      <div class="container page">
+        <div class="row">
+          <div class="col-md-6 offset-md-3 col-xs-12">
+            <h1 class="text-xs-center">"Your Settings"</h1>
+
+            <form>
+              <fieldset>
+                <fieldset class="form-group">
+                  <input class="form-control" type="text" placeholder="URL of profile picture" />
+                </fieldset>
+                <fieldset class="form-group">
+                  <input class="form-control form-control-lg" type="text" placeholder="Your Name" />
+                </fieldset>
+                <fieldset class="form-group">
+                  <textarea
+                    class="form-control form-control-lg"
+                    rows="8"
+                    placeholder="Short bio about you"
+                  ></textarea>
+                </fieldset>
+                <fieldset class="form-group">
+                  <input class="form-control form-control-lg" type="text" placeholder="Email" />
+                </fieldset>
+                <fieldset class="form-group">
+                  <input class="form-control form-control-lg" type="password" placeholder="Password" />
+                </fieldset>
+                <button class="btn btn-lg btn-primary pull-xs-right">"Update Settings"</button>
+              </fieldset>
+            </form>
+            <hr />
+            <ActionForm action=logout_action>
+              <button class="btn btn-outline-danger">"Or click here to logout."</button>
+            </ActionForm>
+          </div>
+        </div>
+      </div>
+    </div>
     }
 }
 
@@ -273,27 +347,40 @@ fn ArticlePreview(cx: Scope) -> impl IntoView {
 
 #[component]
 fn Header(cx: Scope) -> impl IntoView {
+    let current_user = create_server_action::<GetCurrentUser>(cx);
+    current_user.dispatch(GetCurrentUser {});
+
     view! {cx,
       <nav class="navbar navbar-light">
         <div class="container">
           <A class="navbar-brand" href="/">"conduit"</A>
           // TODO: "active" class to a when on page
           <ul class="nav navbar-nav pull-xs-right">
-            <li class="nav-item">
-              <a class="nav-link active" href="">"Home"</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href=""> <i class="ion-compose"></i>" New Article "</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href=""> <i class="ion-gear-a"></i>" Settings "</a>
-            </li>
+
+       <Show when=move || current_user.value().get().is_some() fallback=move |_| {view!{cx,
+
             <li class="nav-item">
               <A class="nav-link" href="/login">"Sign in"</A>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="">"Sign up"</a>
             </li>
+        }}>
+
+            <li class="nav-item">
+              <a class="nav-link active" href="">"Home"</a>
+            </li>
+            <li class="nav-item">
+              <A class="nav-link" href="/settings"> <i class="ion-gear-a"></i>" Settings "</A>
+            </li>
+            <li class="nav-item">
+            // TODO: this panics when there's no current user
+              <span>"logged in as:" {current_user.value().get().unwrap().unwrap().unwrap().email}</span>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href=""> <i class="ion-compose"></i>" New Article "</a>
+            </li>
+       </Show>
           </ul>
         </div>
       </nav>
@@ -362,13 +449,25 @@ pub async fn attempt_login(
 ) -> Result<LoginForm, ServerFnError> {
     let req = use_context::<actix_web::HttpRequest>(cx).unwrap();
     let sess = actix_session::Session::extract(&req).await.unwrap();
-    println!("{:?}", sess.get::<i32>("user_email"));
-
     let form = LoginForm {
         email: Field::required(Some(email)).trim().min_length(10).email(),
         password: Field::required(Some(password)).trim().min_length(10),
     };
-    Ok(form)
+
+    if form.is_valid() {
+        sess.insert("user_email", form.email.clone().input.unwrap());
+        Ok(form)
+    } else {
+        Ok(form)
+    }
+}
+
+#[server(Logout, "/api")]
+pub async fn logout(cx: Scope) -> Result<(), ServerFnError> {
+    let req = use_context::<actix_web::HttpRequest>(cx).unwrap();
+    let sess = actix_session::Session::extract(&req).await.unwrap();
+    sess.clear();
+    Ok(())
 }
 
 #[cfg(feature = "ssr")]
@@ -376,5 +475,44 @@ fn set_header(cx: &Scope, key: HeaderName, val: HeaderValue) {
     let res_options_outer = use_context::<leptos_actix::ResponseOptions>(*cx);
     if let Some(res_options) = res_options_outer {
         res_options.insert_header(key, val);
+    }
+}
+
+#[server(GetCurrentUser, "/api")]
+pub async fn get_current_user(cx: Scope) -> Result<Option<CurrentUser>, ServerFnError> {
+    match use_context::<actix_web::HttpRequest>(cx) {
+        Some(req) => Ok(CurrentUser::extract(&req).await.ok()),
+        None => Ok(None),
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Default, Clone)]
+pub struct CurrentUser {
+    email: String,
+}
+
+#[cfg(feature = "ssr")]
+use actix_web;
+
+#[cfg(feature = "ssr")]
+impl FromRequest for CurrentUser {
+    type Error = actix_web::Error;
+    type Future =
+        std::pin::Pin<Box<dyn std::future::Future<Output = Result<CurrentUser, Self::Error>>>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest,
+        pl: &mut actix_web::dev::Payload,
+    ) -> Self::Future {
+        let fut = actix_session::Session::from_request(req, pl);
+        Box::pin(async move {
+            if let Ok(sessions) = fut.await {
+                if let Ok(Some(email)) = sessions.get("user_email") {
+                    return Ok(CurrentUser { email });
+                }
+            };
+
+            Err(actix_web::error::ErrorUnauthorized("unauthorized"))
+        })
     }
 }
